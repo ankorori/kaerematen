@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { getSocket } from "@/lib/useSocket";
 import type { RoomState } from "@/lib/types";
+import Confetti from "@/app/components/Confetti";
 
 export default function PlayPage() {
   const params = useParams<{ roomId: string }>();
@@ -170,6 +171,7 @@ export default function PlayPage() {
 
       {state.phase === "reveal" && (
         <section>
+          {state.lastResult?.matched && <Confetti key={state.questionNumber} />}
           <h2>{state.lastResult?.matched ? "一致！" : "不一致…"}</h2>
           <ul>
             {state.players.map((p) => (
@@ -195,6 +197,7 @@ export default function PlayPage() {
 
       {state.phase === "cleared" && (
         <section className="card">
+          <Confetti pieceCount={220} />
           <h2>クリア！ 🎉</h2>
           <p>10回連続一致達成！</p>
           {isHost && <button onClick={restartGame}>もう一度あそぶ</button>}

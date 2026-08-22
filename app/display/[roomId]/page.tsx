@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getSocket } from "@/lib/useSocket";
 import type { RoomState } from "@/lib/types";
+import Confetti from "@/app/components/Confetti";
 
 export default function DisplayPage() {
   const params = useParams<{ roomId: string }>();
@@ -89,6 +90,7 @@ export default function DisplayPage() {
 
       {state.phase === "reveal" && (
         <section>
+          {state.lastResult?.matched && <Confetti key={state.questionNumber} />}
           <h1 className={state.lastResult?.matched ? "matched" : "mismatched"}>
             {state.lastResult?.matched ? "一致！" : "不一致…"}
           </h1>
@@ -105,6 +107,7 @@ export default function DisplayPage() {
 
       {state.phase === "cleared" && (
         <section>
+          <Confetti pieceCount={220} />
           <h1 className="matched cleared-title">クリア！ 🎉 10回連続一致達成！</h1>
         </section>
       )}
