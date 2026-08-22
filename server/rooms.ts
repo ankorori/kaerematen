@@ -211,7 +211,7 @@ export class RoomManager {
   private nextQuestion(room: Room) {
     if (room.answerTimer) clearTimeout(room.answerTimer);
 
-    room.questionIndex = (room.questionIndex + 1) % QUESTIONS.length;
+    room.questionIndex = this.pickNextQuestionIndex(room.questionIndex);
     room.attemptsCount += 1;
     for (const p of room.players.values()) p.answer = null;
 
@@ -240,6 +240,15 @@ export class RoomManager {
 
     this.checkClear(room);
     this.broadcast(room);
+  }
+
+  private pickNextQuestionIndex(previousIndex: number): number {
+    if (QUESTIONS.length <= 1) return 0;
+    let index = previousIndex;
+    while (index === previousIndex) {
+      index = Math.floor(Math.random() * QUESTIONS.length);
+    }
+    return index;
   }
 
   private checkClear(room: Room) {

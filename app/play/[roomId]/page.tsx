@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { getSocket } from "@/lib/useSocket";
 import type { RoomState } from "@/lib/types";
 import Confetti from "@/app/components/Confetti";
+import Dismay from "@/app/components/Dismay";
 
 export default function PlayPage() {
   const params = useParams<{ roomId: string }>();
@@ -171,8 +172,14 @@ export default function PlayPage() {
 
       {state.phase === "reveal" && (
         <section>
-          {state.lastResult?.matched && <Confetti key={state.questionNumber} />}
-          <h2>{state.lastResult?.matched ? "一致！" : "不一致…"}</h2>
+          {state.lastResult?.matched ? (
+            <Confetti key={state.questionNumber} />
+          ) : (
+            <Dismay key={state.questionNumber} />
+          )}
+          <h2 className={state.lastResult?.matched ? undefined : "mismatch-heading"}>
+            {state.lastResult?.matched ? "一致！" : "不一致…"}
+          </h2>
           <ul>
             {state.players.map((p) => (
               <li key={p.id}>

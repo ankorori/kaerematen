@@ -267,6 +267,36 @@ form {
   }
 }
 
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  20% {
+    transform: translateX(-10px) rotate(-3deg);
+  }
+  40% {
+    transform: translateX(9px) rotate(3deg);
+  }
+  60% {
+    transform: translateX(-6px) rotate(-2deg);
+  }
+  80% {
+    transform: translateX(4px) rotate(1deg);
+  }
+}
+
+@keyframes droop {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(8px) scale(0.96);
+    opacity: 0.7;
+  }
+}
+
 h2,
 .container.display h1.matched,
 .container.display h1.mismatched {
@@ -281,8 +311,42 @@ h2,
   color: var(--good);
 }
 
-.container.display h1.mismatched {
+.container.display h1.mismatched,
+h2.mismatch-heading {
   color: var(--bad);
+  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), shake 0.5s ease 0.3s, droop 0.5s ease 0.8s forwards;
+}
+
+.dismay-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.dismay-drop {
+  position: absolute;
+  top: -10vh;
+  opacity: 0;
+  filter: grayscale(0.25) saturate(0.7);
+  animation-name: dismay-fall;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+}
+
+@keyframes dismay-fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(115vh);
+    opacity: 0.1;
+  }
 }
 
 .timer {
