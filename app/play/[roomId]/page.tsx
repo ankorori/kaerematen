@@ -72,6 +72,9 @@ export default function PlayPage() {
   function forceMatch() {
     getSocket().emit("force_match");
   }
+  function advance() {
+    getSocket().emit("advance");
+  }
   function restartGame() {
     getSocket().emit("restart_game");
   }
@@ -175,10 +178,18 @@ export default function PlayPage() {
               </li>
             ))}
           </ul>
-          {isHost && !state.lastResult?.matched && (
-            <button onClick={forceMatch}>強制一致にする</button>
+          {isHost ? (
+            <div className="revealActions">
+              {!state.lastResult?.matched && (
+                <button className="secondary" onClick={forceMatch}>
+                  強制一致にする
+                </button>
+              )}
+              <button onClick={advance}>次の問題へ進む</button>
+            </div>
+          ) : (
+            <p className="hint">ホストが次に進めるのを待っています…</p>
           )}
-          <p className="hint">まもなく次のお題…</p>
         </section>
       )}
 

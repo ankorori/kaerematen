@@ -99,12 +99,13 @@ export default function DisplayPage() {
               </li>
             ))}
           </ul>
+          <p className="hint center">ホストが次の問題に進めるのを待っています…</p>
         </section>
       )}
 
       {state.phase === "cleared" && (
         <section>
-          <h1 className="matched">クリア！ 🎉 10回連続一致達成！</h1>
+          <h1 className="matched cleared-title">クリア！ 🎉 10回連続一致達成！</h1>
         </section>
       )}
     </main>

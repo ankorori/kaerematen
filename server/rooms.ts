@@ -11,7 +11,6 @@ import type {
 } from "../lib/types";
 
 const ANSWER_DURATION_MS = 30_000;
-const REVEAL_DURATION_MS = 5_000;
 const GOAL = 10;
 
 const roomCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 5);
@@ -34,10 +33,8 @@ interface Room {
   questionIndex: number;
   attemptsCount: number;
   answerDeadline: number | null;
-  revealDeadline: number | null;
   lastResult: { matched: boolean; forced: boolean } | null;
   answerTimer: ReturnType<typeof setTimeout> | null;
-  advanceTimer: ReturnType<typeof setTimeout> | null;
 }
 
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -61,10 +58,8 @@ export class RoomManager {
       questionIndex: -1,
       attemptsCount: 0,
       answerDeadline: null,
-      revealDeadline: null,
       lastResult: null,
       answerTimer: null,
-      advanceTimer: null,
     };
     this.rooms.set(id, room);
     return { roomId: id, hostToken: room.hostToken };
@@ -157,9 +152,17 @@ export class RoomManager {
 
     room.lastResult = { matched: true, forced: true };
     room.streak += 1;
-    if (room.advanceTimer) clearTimeout(room.advanceTimer);
-    this.scheduleAfterReveal(room);
+    this.checkClear(room);
     this.broadcast(room);
+  }
+
+  handleAdvance(socket: AppSocket) {
+    const room = this.roomOf(socket);
+    if (!room) return;
+    if (socket.data.playerId !== room.hostPlayerId) return;
+    if (room.phase !== "reveal") return;
+
+    this.nextQuestion(room);
   }
 
   handleRestart(socket: AppSocket) {
@@ -168,7 +171,6 @@ export class RoomManager {
     if (socket.data.playerId !== room.hostPlayerId) return;
 
     if (room.answerTimer) clearTimeout(room.answerTimer);
-    if (room.advanceTimer) clearTimeout(room.advanceTimer);
 
     room.phase = "lobby";
     room.streak = 0;
@@ -176,7 +178,6 @@ export class RoomManager {
     room.attemptsCount = 0;
     room.lastResult = null;
     room.answerDeadline = null;
-    room.revealDeadline = null;
     for (const p of room.players.values()) p.answer = null;
 
     this.broadcast(room);
@@ -200,7 +201,6 @@ export class RoomManager {
 
     if (room.players.size === 0) {
       if (room.answerTimer) clearTimeout(room.answerTimer);
-      if (room.advanceTimer) clearTimeout(room.advanceTimer);
       this.rooms.delete(room.id);
       return;
     }
@@ -210,7 +210,6 @@ export class RoomManager {
 
   private nextQuestion(room: Room) {
     if (room.answerTimer) clearTimeout(room.answerTimer);
-    if (room.advanceTimer) clearTimeout(room.advanceTimer);
 
     room.questionIndex = (room.questionIndex + 1) % QUESTIONS.length;
     room.attemptsCount += 1;
@@ -219,7 +218,6 @@ export class RoomManager {
     room.phase = "answering";
     room.lastResult = null;
     room.answerDeadline = Date.now() + ANSWER_DURATION_MS;
-    room.revealDeadline = null;
     room.answerTimer = setTimeout(() => this.revealNow(room), ANSWER_DURATION_MS);
 
     this.broadcast(room);
@@ -240,18 +238,14 @@ export class RoomManager {
     room.lastResult = { matched, forced: false };
     room.streak = matched ? room.streak + 1 : 0;
 
-    this.scheduleAfterReveal(room);
+    this.checkClear(room);
     this.broadcast(room);
   }
 
-  private scheduleAfterReveal(room: Room) {
+  private checkClear(room: Room) {
     if (room.streak >= GOAL) {
       room.phase = "cleared";
-      room.revealDeadline = null;
-      return;
     }
-    room.revealDeadline = Date.now() + REVEAL_DURATION_MS;
-    room.advanceTimer = setTimeout(() => this.nextQuestion(room), REVEAL_DURATION_MS);
   }
 
   private roomOf(socket: AppSocket): Room | undefined {
@@ -282,7 +276,6 @@ export class RoomManager {
       totalQuestions: QUESTIONS.length,
       currentQuestion: room.questionIndex >= 0 ? QUESTIONS[room.questionIndex] : null,
       answerDeadline: room.answerDeadline,
-      revealDeadline: room.revealDeadline,
       lastResult: room.lastResult,
     };
   }

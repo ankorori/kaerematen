@@ -18,7 +18,6 @@ export interface RoomState {
   totalQuestions: number;
   currentQuestion: string | null;
   answerDeadline: number | null;
-  revealDeadline: number | null;
   lastResult: { matched: boolean; forced: boolean } | null;
 }
 
@@ -38,6 +37,7 @@ export interface ClientToServerEvents {
   start_game: () => void;
   submit_answer: (payload: { text: string }) => void;
   force_match: () => void;
+  advance: () => void;
   restart_game: () => void;
 }
 
