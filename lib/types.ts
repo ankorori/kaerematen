@@ -7,6 +7,16 @@ export interface PublicPlayer {
   answer: string | null;
 }
 
+export interface QuestionCategoryInfo {
+  id: string;
+  label: string;
+}
+
+export interface RoomSettings {
+  answerDurationMs: number;
+  categoryIds: string[];
+}
+
 export interface RoomState {
   roomId: string;
   phase: Phase;
@@ -18,7 +28,9 @@ export interface RoomState {
   totalQuestions: number;
   currentQuestion: string | null;
   answerDeadline: number | null;
-  lastResult: { matched: boolean; forced: boolean } | null;
+  lastResult: { matched: boolean; forced: boolean; milestone: boolean } | null;
+  settings: RoomSettings;
+  availableCategories: QuestionCategoryInfo[];
 }
 
 export type JoinResult =
@@ -34,6 +46,7 @@ export interface ClientToServerEvents {
     ack: (res: JoinResult) => void,
   ) => void;
   watch: (payload: { roomId: string }, ack: (res: WatchResult) => void) => void;
+  update_settings: (payload: { answerDurationSec?: number; categoryIds?: string[] }) => void;
   start_game: () => void;
   submit_answer: (payload: { text: string }) => void;
   force_match: () => void;

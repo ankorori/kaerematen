@@ -1,17 +1,22 @@
 import { customAlphabet, nanoid } from "nanoid";
 import type { Server, Socket } from "socket.io";
 import { normalizeAnswer } from "../lib/normalize";
-import { QUESTIONS } from "../lib/questions";
+import { ALL_CATEGORY_IDS, QUESTION_CATEGORIES, getQuestionsForCategories } from "../lib/questions";
+import {
+  DEFAULT_ANSWER_DURATION_SEC,
+  GOAL,
+  MAX_ANSWER_DURATION_SEC,
+  MILESTONE_INTERVAL,
+  MIN_ANSWER_DURATION_SEC,
+} from "../lib/settings";
 import type {
   ClientToServerEvents,
   JoinResult,
+  RoomSettings,
   RoomState,
   ServerToClientEvents,
   WatchResult,
 } from "../lib/types";
-
-const ANSWER_DURATION_MS = 30_000;
-const GOAL = 10;
 
 const roomCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 5);
 
@@ -31,10 +36,12 @@ interface Room {
   phase: Phase;
   streak: number;
   questionIndex: number;
+  questionPool: string[];
   attemptsCount: number;
   answerDeadline: number | null;
-  lastResult: { matched: boolean; forced: boolean } | null;
+  lastResult: { matched: boolean; forced: boolean; milestone: boolean } | null;
   answerTimer: ReturnType<typeof setTimeout> | null;
+  settings: RoomSettings;
 }
 
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -56,10 +63,15 @@ export class RoomManager {
       phase: "lobby",
       streak: 0,
       questionIndex: -1,
+      questionPool: [],
       attemptsCount: 0,
       answerDeadline: null,
       lastResult: null,
       answerTimer: null,
+      settings: {
+        answerDurationMs: DEFAULT_ANSWER_DURATION_SEC * 1000,
+        categoryIds: [...ALL_CATEGORY_IDS],
+      },
     };
     this.rooms.set(id, room);
     return { roomId: id, hostToken: room.hostToken };
@@ -114,6 +126,32 @@ export class RoomManager {
     socket.emit("state", this.toPublicState(room));
   }
 
+  handleUpdateSettings(
+    socket: AppSocket,
+    payload: { answerDurationSec?: number; categoryIds?: string[] },
+  ) {
+    const room = this.roomOf(socket);
+    if (!room) return;
+    if (socket.data.playerId !== room.hostPlayerId) return;
+    if (room.phase !== "lobby") return;
+
+    if (typeof payload.answerDurationSec === "number") {
+      const sec = Math.round(payload.answerDurationSec);
+      if (sec >= MIN_ANSWER_DURATION_SEC && sec <= MAX_ANSWER_DURATION_SEC) {
+        room.settings.answerDurationMs = sec * 1000;
+      }
+    }
+
+    if (Array.isArray(payload.categoryIds)) {
+      const valid = [...new Set(payload.categoryIds.filter((id) => ALL_CATEGORY_IDS.includes(id)))];
+      if (valid.length > 0) {
+        room.settings.categoryIds = valid;
+      }
+    }
+
+    this.broadcast(room);
+  }
+
   handleStart(socket: AppSocket) {
     const room = this.roomOf(socket);
     if (!room) return;
@@ -124,6 +162,7 @@ export class RoomManager {
     room.streak = 0;
     room.questionIndex = -1;
     room.attemptsCount = 0;
+    room.questionPool = getQuestionsForCategories(room.settings.categoryIds);
     this.nextQuestion(room);
   }
 
@@ -150,8 +189,10 @@ export class RoomManager {
     if (room.phase !== "reveal") return;
     if (room.lastResult?.matched) return;
 
-    room.lastResult = { matched: true, forced: true };
-    room.streak += 1;
+    const newStreak = room.streak + 1;
+    const milestone = newStreak % MILESTONE_INTERVAL === 0 && newStreak < GOAL;
+    room.streak = newStreak;
+    room.lastResult = { matched: true, forced: true, milestone };
     this.checkClear(room);
     this.broadcast(room);
   }
@@ -175,6 +216,7 @@ export class RoomManager {
     room.phase = "lobby";
     room.streak = 0;
     room.questionIndex = -1;
+    room.questionPool = [];
     room.attemptsCount = 0;
     room.lastResult = null;
     room.answerDeadline = null;
@@ -211,14 +253,15 @@ export class RoomManager {
   private nextQuestion(room: Room) {
     if (room.answerTimer) clearTimeout(room.answerTimer);
 
-    room.questionIndex = this.pickNextQuestionIndex(room.questionIndex);
+    room.questionIndex = this.pickNextQuestionIndex(room.questionIndex, room.questionPool.length);
     room.attemptsCount += 1;
     for (const p of room.players.values()) p.answer = null;
 
     room.phase = "answering";
     room.lastResult = null;
-    room.answerDeadline = Date.now() + ANSWER_DURATION_MS;
-    room.answerTimer = setTimeout(() => this.revealNow(room), ANSWER_DURATION_MS);
+    const duration = room.settings.answerDurationMs;
+    room.answerDeadline = Date.now() + duration;
+    room.answerTimer = setTimeout(() => this.revealNow(room), duration);
 
     this.broadcast(room);
   }
@@ -235,18 +278,20 @@ export class RoomManager {
       normalized.every((n) => n !== null && n !== "") &&
       normalized.every((n) => n === normalized[0]);
 
-    room.lastResult = { matched, forced: false };
-    room.streak = matched ? room.streak + 1 : 0;
+    const newStreak = matched ? room.streak + 1 : 0;
+    const milestone = matched && newStreak % MILESTONE_INTERVAL === 0 && newStreak < GOAL;
+    room.streak = newStreak;
+    room.lastResult = { matched, forced: false, milestone };
 
     this.checkClear(room);
     this.broadcast(room);
   }
 
-  private pickNextQuestionIndex(previousIndex: number): number {
-    if (QUESTIONS.length <= 1) return 0;
+  private pickNextQuestionIndex(previousIndex: number, poolLength: number): number {
+    if (poolLength <= 1) return 0;
     let index = previousIndex;
     while (index === previousIndex) {
-      index = Math.floor(Math.random() * QUESTIONS.length);
+      index = Math.floor(Math.random() * poolLength);
     }
     return index;
   }
@@ -282,10 +327,12 @@ export class RoomManager {
       streak: room.streak,
       goal: GOAL,
       questionNumber: room.attemptsCount,
-      totalQuestions: QUESTIONS.length,
-      currentQuestion: room.questionIndex >= 0 ? QUESTIONS[room.questionIndex] : null,
+      totalQuestions: room.questionPool.length,
+      currentQuestion: room.questionIndex >= 0 ? room.questionPool[room.questionIndex] : null,
       answerDeadline: room.answerDeadline,
       lastResult: room.lastResult,
+      settings: room.settings,
+      availableCategories: QUESTION_CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
     };
   }
 }

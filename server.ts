@@ -27,6 +27,7 @@ app.prepare().then(() => {
       manager.handleWatch(socket, payload, ack);
     });
 
+    socket.on("update_settings", (payload) => manager.handleUpdateSettings(socket, payload));
     socket.on("start_game", () => manager.handleStart(socket));
     socket.on("submit_answer", (payload) => manager.handleSubmit(socket, payload));
     socket.on("force_match", () => manager.handleForceMatch(socket));

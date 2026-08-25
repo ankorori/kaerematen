@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { getSocket } from "@/lib/useSocket";
 import type { RoomState } from "@/lib/types";
+import { ANSWER_DURATION_CHOICES_SEC } from "@/lib/settings";
+import { playMatchSound, playMismatchSound, unlockAudio } from "@/lib/sound";
 import Confetti from "@/app/components/Confetti";
 import Dismay from "@/app/components/Dismay";
+import StreakBurst from "@/app/components/StreakBurst";
 
 export default function PlayPage() {
   const params = useParams<{ roomId: string }>();
@@ -43,9 +46,28 @@ export default function PlayPage() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    if (state?.phase !== "reveal" || !state.lastResult) return;
+    if (state.lastResult.matched) {
+      playMatchSound(state.lastResult.milestone);
+    } else {
+      playMismatchSound();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.phase, state?.questionNumber]);
+
+  const prevPhaseRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (state?.phase === "cleared" && prevPhaseRef.current !== "cleared") {
+      playMatchSound(true);
+    }
+    prevPhaseRef.current = state?.phase;
+  }, [state?.phase]);
+
   function handleJoin(e: FormEvent) {
     e.preventDefault();
     if (!nickname.trim() || joining) return;
+    unlockAudio();
     setJoining(true);
     const socket = getSocket();
     socket.emit("join", { roomId, nickname: nickname.trim(), hostToken }, (res) => {
@@ -63,22 +85,37 @@ export default function PlayPage() {
   function handleSubmitAnswer(e: FormEvent) {
     e.preventDefault();
     if (!answerText.trim() || submitted) return;
+    unlockAudio();
     getSocket().emit("submit_answer", { text: answerText.trim() });
     setAnswerText("");
     setSubmitted(true);
   }
 
   function startGame() {
+    unlockAudio();
     getSocket().emit("start_game");
   }
   function forceMatch() {
+    unlockAudio();
     getSocket().emit("force_match");
   }
   function advance() {
+    unlockAudio();
     getSocket().emit("advance");
   }
   function restartGame() {
+    unlockAudio();
     getSocket().emit("restart_game");
+  }
+  function setDurationSec(sec: number) {
+    getSocket().emit("update_settings", { answerDurationSec: sec });
+  }
+  function toggleCategory(id: string) {
+    if (!state) return;
+    const current = state.settings.categoryIds;
+    const next = current.includes(id) ? current.filter((c) => c !== id) : [...current, id];
+    if (next.length === 0) return;
+    getSocket().emit("update_settings", { categoryIds: next });
   }
 
   if (!joined) {
@@ -138,8 +175,43 @@ export default function PlayPage() {
               </li>
             ))}
           </ul>
+
           {isHost ? (
-            <button onClick={startGame}>ゲーム開始</button>
+            <>
+              <div className="settings-panel">
+                <div className="settings-group">
+                  <span className="settings-label">回答時間</span>
+                  <div className="duration-options">
+                    {ANSWER_DURATION_CHOICES_SEC.map((sec) => (
+                      <button
+                        key={sec}
+                        type="button"
+                        className={`chip${state.settings.answerDurationMs === sec * 1000 ? " selected" : ""}`}
+                        onClick={() => setDurationSec(sec)}
+                      >
+                        {sec}秒
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="settings-group">
+                  <span className="settings-label">お題のカテゴリ</span>
+                  <div className="category-options">
+                    {state.availableCategories.map((c) => (
+                      <label key={c.id}>
+                        <input
+                          type="checkbox"
+                          checked={state.settings.categoryIds.includes(c.id)}
+                          onChange={() => toggleCategory(c.id)}
+                        />
+                        {c.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <button onClick={startGame}>ゲーム開始</button>
+            </>
           ) : (
             <p className="hint">ホストの開始を待っています…</p>
           )}
@@ -176,6 +248,9 @@ export default function PlayPage() {
             <Confetti key={state.questionNumber} />
           ) : (
             <Dismay key={state.questionNumber} />
+          )}
+          {state.lastResult?.matched && state.lastResult.milestone && (
+            <StreakBurst key={`streak-${state.questionNumber}`} streak={state.streak} />
           )}
           <h2 className={state.lastResult?.matched ? undefined : "mismatch-heading"}>
             {state.lastResult?.matched ? "一致！" : "不一致…"}
