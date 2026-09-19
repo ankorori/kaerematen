@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { getSocket } from "@/lib/useSocket";
-import type { RoomState } from "@/lib/types";
+import type { GameMode, RoomState } from "@/lib/types";
 import { ANSWER_DURATION_CHOICES_SEC } from "@/lib/settings";
 import { playMatchSound, playMismatchSound, unlockAudio } from "@/lib/sound";
 import Confetti from "@/app/components/Confetti";
@@ -20,6 +20,7 @@ export default function PlayPage() {
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  const [playerId, setPlayerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<RoomState | null>(null);
   const [answerText, setAnswerText] = useState("");
@@ -47,7 +48,18 @@ export default function PlayPage() {
   }, []);
 
   useEffect(() => {
-    if (state?.phase !== "reveal" || !state.lastResult) return;
+    if (state?.phase !== "reveal") return;
+    if (state.settings.mode === "quiz") {
+      const me = state.players.find((p) => p.id === playerId);
+      if (!me) return;
+      if (me.isCorrect) {
+        playMatchSound(false);
+      } else {
+        playMismatchSound();
+      }
+      return;
+    }
+    if (!state.lastResult) return;
     if (state.lastResult.matched) {
       playMatchSound(state.lastResult.milestone);
     } else {
@@ -75,6 +87,7 @@ export default function PlayPage() {
       if (res.ok) {
         setJoined(true);
         setIsHost(res.isHost);
+        setPlayerId(res.playerId);
         setError(null);
       } else {
         setError(res.message);
@@ -117,6 +130,26 @@ export default function PlayPage() {
     if (next.length === 0) return;
     getSocket().emit("update_settings", { categoryIds: next });
   }
+  function toggleQuizChapter(id: string) {
+    if (!state) return;
+    const current = state.settings.quizChapterIds;
+    const next = current.includes(id) ? current.filter((c) => c !== id) : [...current, id];
+    if (next.length === 0) return;
+    getSocket().emit("update_settings", { quizChapterIds: next });
+  }
+  function setMode(mode: GameMode) {
+    getSocket().emit("update_settings", { mode });
+  }
+  function submitQuickAnswer(text: string) {
+    if (submitted) return;
+    unlockAudio();
+    getSocket().emit("submit_answer", { text });
+    setSubmitted(true);
+  }
+  function toggleCorrect(targetPlayerId: string) {
+    unlockAudio();
+    getSocket().emit("toggle_correct", { playerId: targetPlayerId });
+  }
 
   if (!joined) {
     return (
@@ -155,11 +188,18 @@ export default function PlayPage() {
     ? Math.max(0, Math.ceil((state.answerDeadline - now) / 1000))
     : null;
   const answeredCount = state.players.filter((p) => p.hasAnswered).length;
+  const isQuiz = state.settings.mode === "quiz";
+  const isMaruBatsu = isQuiz && (state.currentQuestion ?? "").startsWith("○×");
+  const ranking = [...state.players].sort((a, b) => b.score - a.score);
 
   return (
     <main className="container">
       <header className="statusbar">
-        <span>連続一致: {state.streak} / {state.goal}</span>
+        {isQuiz ? (
+          <span>問題 {state.questionNumber} / {state.totalQuestions}</span>
+        ) : (
+          <span>連続一致: {state.streak} / {state.goal}</span>
+        )}
         {isHost && <span className="badge">ホスト</span>}
       </header>
 
@@ -180,6 +220,25 @@ export default function PlayPage() {
             <>
               <div className="settings-panel">
                 <div className="settings-group">
+                  <span className="settings-label">ゲームモード</span>
+                  <div className="duration-options">
+                    <button
+                      type="button"
+                      className={`chip${state.settings.mode === "streak" ? " selected" : ""}`}
+                      onClick={() => setMode("streak")}
+                    >
+                      一致するまで終われまテン
+                    </button>
+                    <button
+                      type="button"
+                      className={`chip${state.settings.mode === "quiz" ? " selected" : ""}`}
+                      onClick={() => setMode("quiz")}
+                    >
+                      クイズモード
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-group">
                   <span className="settings-label">回答時間</span>
                   <div className="duration-options">
                     {ANSWER_DURATION_CHOICES_SEC.map((sec) => (
@@ -194,21 +253,39 @@ export default function PlayPage() {
                     ))}
                   </div>
                 </div>
-                <div className="settings-group">
-                  <span className="settings-label">お題のカテゴリ</span>
-                  <div className="category-options">
-                    {state.availableCategories.map((c) => (
-                      <label key={c.id}>
-                        <input
-                          type="checkbox"
-                          checked={state.settings.categoryIds.includes(c.id)}
-                          onChange={() => toggleCategory(c.id)}
-                        />
-                        {c.label}
-                      </label>
-                    ))}
+                {isQuiz ? (
+                  <div className="settings-group">
+                    <span className="settings-label">クイズの章</span>
+                    <div className="category-options">
+                      {state.availableQuizChapters.map((c) => (
+                        <label key={c.id}>
+                          <input
+                            type="checkbox"
+                            checked={state.settings.quizChapterIds.includes(c.id)}
+                            onChange={() => toggleQuizChapter(c.id)}
+                          />
+                          {c.label}
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="settings-group">
+                    <span className="settings-label">お題のカテゴリ</span>
+                    <div className="category-options">
+                      {state.availableCategories.map((c) => (
+                        <label key={c.id}>
+                          <input
+                            type="checkbox"
+                            checked={state.settings.categoryIds.includes(c.id)}
+                            onChange={() => toggleCategory(c.id)}
+                          />
+                          {c.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <button onClick={startGame}>ゲーム開始</button>
             </>
@@ -220,20 +297,32 @@ export default function PlayPage() {
 
       {state.phase === "answering" && (
         <section>
-          <h2>お題 {state.questionNumber}問目</h2>
+          <h2>{isQuiz ? `第${state.questionNumber}問` : `お題 ${state.questionNumber}問目`}</h2>
           <p className="question">{state.currentQuestion}</p>
           {secondsLeft !== null && <p className="timer">残り {secondsLeft} 秒</p>}
           {!submitted ? (
-            <form onSubmit={handleSubmitAnswer}>
-              <input
-                value={answerText}
-                onChange={(e) => setAnswerText(e.target.value)}
-                placeholder="回答を入力"
-                maxLength={100}
-                autoFocus
-              />
-              <button type="submit">回答する</button>
-            </form>
+            <>
+              {isMaruBatsu && (
+                <div className="duration-options">
+                  <button type="button" className="chip" onClick={() => submitQuickAnswer("○")}>
+                    ○
+                  </button>
+                  <button type="button" className="chip" onClick={() => submitQuickAnswer("×")}>
+                    ×
+                  </button>
+                </div>
+              )}
+              <form onSubmit={handleSubmitAnswer}>
+                <input
+                  value={answerText}
+                  onChange={(e) => setAnswerText(e.target.value)}
+                  placeholder="回答を入力"
+                  maxLength={100}
+                  autoFocus
+                />
+                <button type="submit">回答する</button>
+              </form>
+            </>
           ) : (
             <p className="hint">
               回答済み。他の人を待っています…({answeredCount}/{state.players.length})
@@ -242,7 +331,33 @@ export default function PlayPage() {
         </section>
       )}
 
-      {state.phase === "reveal" && (
+      {state.phase === "reveal" && isQuiz && (
+        <section>
+          <h2>正解: {state.correctAnswerText}</h2>
+          <ul>
+            {state.players.map((p) => (
+              <li key={p.id}>
+                <span className={p.isCorrect ? "correct" : "incorrect"}>{p.isCorrect ? "○" : "×"}</span>{" "}
+                {p.nickname}: {p.answer ?? "(未回答)"} (スコア: {p.score})
+                {isHost && (
+                  <button className="secondary" onClick={() => toggleCorrect(p.id)}>
+                    {p.isCorrect ? "不正解にする" : "正解にする"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {isHost ? (
+            <div className="revealActions">
+              <button onClick={advance}>次の問題へ進む</button>
+            </div>
+          ) : (
+            <p className="hint">ホストが次に進めるのを待っています…</p>
+          )}
+        </section>
+      )}
+
+      {state.phase === "reveal" && !isQuiz && (
         <section>
           {state.lastResult?.matched ? (
             <Confetti key={state.questionNumber} />
@@ -277,7 +392,22 @@ export default function PlayPage() {
         </section>
       )}
 
-      {state.phase === "cleared" && (
+      {state.phase === "cleared" && isQuiz && (
+        <section className="card">
+          <Confetti pieceCount={220} />
+          <h2>クイズ終了！ 🎉</h2>
+          <ol>
+            {ranking.map((p) => (
+              <li key={p.id}>
+                {p.nickname}: {p.score}問正解
+              </li>
+            ))}
+          </ol>
+          {isHost && <button onClick={restartGame}>もう一度あそぶ</button>}
+        </section>
+      )}
+
+      {state.phase === "cleared" && !isQuiz && (
         <section className="card">
           <Confetti pieceCount={220} />
           <h2>クリア！ 🎉</h2>

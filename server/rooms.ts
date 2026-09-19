@@ -3,7 +3,15 @@ import type { Server, Socket } from "socket.io";
 import { normalizeAnswer } from "../lib/normalize";
 import { ALL_CATEGORY_IDS, QUESTION_CATEGORIES, getQuestionsForCategories } from "../lib/questions";
 import {
+  ALL_QUIZ_CHAPTER_IDS,
+  QUIZ_CHAPTERS,
+  getQuizQuestionsForChapters,
+  isQuizAnswerCorrect,
+  type QuizQuestion,
+} from "../lib/quizQuestions";
+import {
   DEFAULT_ANSWER_DURATION_SEC,
+  DEFAULT_MODE,
   GOAL,
   MAX_ANSWER_DURATION_SEC,
   MILESTONE_INTERVAL,
@@ -11,6 +19,7 @@ import {
 } from "../lib/settings";
 import type {
   ClientToServerEvents,
+  GameMode,
   JoinResult,
   RoomSettings,
   RoomState,
@@ -26,6 +35,8 @@ interface PlayerInternal {
   id: string;
   nickname: string;
   answer: string | null;
+  score: number;
+  isCorrect: boolean | null;
 }
 
 interface Room {
@@ -37,6 +48,7 @@ interface Room {
   streak: number;
   questionIndex: number;
   questionPool: string[];
+  quizPool: QuizQuestion[];
   attemptsCount: number;
   answerDeadline: number | null;
   lastResult: { matched: boolean; forced: boolean; milestone: boolean } | null;
@@ -45,6 +57,15 @@ interface Room {
 }
 
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+
+function shuffled<T>(items: T[]): T[] {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
 
 export class RoomManager {
   private rooms = new Map<string, Room>();
@@ -64,6 +85,7 @@ export class RoomManager {
       streak: 0,
       questionIndex: -1,
       questionPool: [],
+      quizPool: [],
       attemptsCount: 0,
       answerDeadline: null,
       lastResult: null,
@@ -71,6 +93,8 @@ export class RoomManager {
       settings: {
         answerDurationMs: DEFAULT_ANSWER_DURATION_SEC * 1000,
         categoryIds: [...ALL_CATEGORY_IDS],
+        mode: DEFAULT_MODE,
+        quizChapterIds: [...ALL_QUIZ_CHAPTER_IDS],
       },
     };
     this.rooms.set(id, room);
@@ -96,7 +120,7 @@ export class RoomManager {
     }
 
     const id = socket.id;
-    room.players.set(id, { id, nickname, answer: null });
+    room.players.set(id, { id, nickname, answer: null, score: 0, isCorrect: null });
 
     let isHost = room.hostPlayerId === id;
     if (payload.hostToken && payload.hostToken === room.hostToken) {
@@ -128,7 +152,12 @@ export class RoomManager {
 
   handleUpdateSettings(
     socket: AppSocket,
-    payload: { answerDurationSec?: number; categoryIds?: string[] },
+    payload: {
+      answerDurationSec?: number;
+      categoryIds?: string[];
+      mode?: GameMode;
+      quizChapterIds?: string[];
+    },
   ) {
     const room = this.roomOf(socket);
     if (!room) return;
@@ -149,6 +178,17 @@ export class RoomManager {
       }
     }
 
+    if (payload.mode === "streak" || payload.mode === "quiz") {
+      room.settings.mode = payload.mode;
+    }
+
+    if (Array.isArray(payload.quizChapterIds)) {
+      const valid = [...new Set(payload.quizChapterIds.filter((id) => ALL_QUIZ_CHAPTER_IDS.includes(id)))];
+      if (valid.length > 0) {
+        room.settings.quizChapterIds = valid;
+      }
+    }
+
     this.broadcast(room);
   }
 
@@ -162,7 +202,19 @@ export class RoomManager {
     room.streak = 0;
     room.questionIndex = -1;
     room.attemptsCount = 0;
-    room.questionPool = getQuestionsForCategories(room.settings.categoryIds);
+    for (const p of room.players.values()) {
+      p.score = 0;
+      p.isCorrect = null;
+    }
+
+    if (room.settings.mode === "quiz") {
+      room.quizPool = shuffled(getQuizQuestionsForChapters(room.settings.quizChapterIds));
+      room.questionPool = [];
+    } else {
+      room.questionPool = getQuestionsForCategories(room.settings.categoryIds);
+      room.quizPool = [];
+    }
+
     this.nextQuestion(room);
   }
 
@@ -185,6 +237,7 @@ export class RoomManager {
   handleForceMatch(socket: AppSocket) {
     const room = this.roomOf(socket);
     if (!room) return;
+    if (room.settings.mode !== "streak") return;
     if (socket.data.playerId !== room.hostPlayerId) return;
     if (room.phase !== "reveal") return;
     if (room.lastResult?.matched) return;
@@ -197,11 +250,33 @@ export class RoomManager {
     this.broadcast(room);
   }
 
+  handleToggleCorrect(socket: AppSocket, payload: { playerId: string }) {
+    const room = this.roomOf(socket);
+    if (!room) return;
+    if (room.settings.mode !== "quiz") return;
+    if (socket.data.playerId !== room.hostPlayerId) return;
+    if (room.phase !== "reveal") return;
+
+    const player = room.players.get(payload.playerId);
+    if (!player) return;
+
+    const wasCorrect = player.isCorrect === true;
+    player.isCorrect = !wasCorrect;
+    player.score += wasCorrect ? -1 : 1;
+    this.broadcast(room);
+  }
+
   handleAdvance(socket: AppSocket) {
     const room = this.roomOf(socket);
     if (!room) return;
     if (socket.data.playerId !== room.hostPlayerId) return;
     if (room.phase !== "reveal") return;
+
+    if (room.settings.mode === "quiz" && room.questionIndex + 1 >= room.quizPool.length) {
+      room.phase = "cleared";
+      this.broadcast(room);
+      return;
+    }
 
     this.nextQuestion(room);
   }
@@ -217,10 +292,15 @@ export class RoomManager {
     room.streak = 0;
     room.questionIndex = -1;
     room.questionPool = [];
+    room.quizPool = [];
     room.attemptsCount = 0;
     room.lastResult = null;
     room.answerDeadline = null;
-    for (const p of room.players.values()) p.answer = null;
+    for (const p of room.players.values()) {
+      p.answer = null;
+      p.score = 0;
+      p.isCorrect = null;
+    }
 
     this.broadcast(room);
   }
@@ -253,9 +333,16 @@ export class RoomManager {
   private nextQuestion(room: Room) {
     if (room.answerTimer) clearTimeout(room.answerTimer);
 
-    room.questionIndex = this.pickNextQuestionIndex(room.questionIndex, room.questionPool.length);
+    const poolLength = room.settings.mode === "quiz" ? room.quizPool.length : room.questionPool.length;
+    room.questionIndex =
+      room.settings.mode === "quiz"
+        ? room.questionIndex + 1
+        : this.pickNextQuestionIndex(room.questionIndex, poolLength);
     room.attemptsCount += 1;
-    for (const p of room.players.values()) p.answer = null;
+    for (const p of room.players.values()) {
+      p.answer = null;
+      p.isCorrect = null;
+    }
 
     room.phase = "answering";
     room.lastResult = null;
@@ -271,6 +358,17 @@ export class RoomManager {
     room.answerTimer = null;
     room.phase = "reveal";
 
+    if (room.settings.mode === "quiz") {
+      this.revealQuiz(room);
+    } else {
+      this.revealStreak(room);
+    }
+
+    this.checkClear(room);
+    this.broadcast(room);
+  }
+
+  private revealStreak(room: Room) {
     const players = [...room.players.values()];
     const normalized = players.map((p) => (p.answer ? normalizeAnswer(p.answer) : null));
     const matched =
@@ -282,9 +380,18 @@ export class RoomManager {
     const milestone = matched && newStreak % MILESTONE_INTERVAL === 0 && newStreak < GOAL;
     room.streak = newStreak;
     room.lastResult = { matched, forced: false, milestone };
+  }
 
-    this.checkClear(room);
-    this.broadcast(room);
+  private revealQuiz(room: Room) {
+    const question = room.quizPool[room.questionIndex];
+    room.lastResult = null;
+    if (!question) return;
+
+    for (const player of room.players.values()) {
+      const correct = player.answer !== null && isQuizAnswerCorrect(player.answer, question);
+      player.isCorrect = correct;
+      if (correct) player.score += 1;
+    }
   }
 
   private pickNextQuestionIndex(previousIndex: number, poolLength: number): number {
@@ -297,7 +404,7 @@ export class RoomManager {
   }
 
   private checkClear(room: Room) {
-    if (room.streak >= GOAL) {
+    if (room.settings.mode === "streak" && room.streak >= GOAL) {
       room.phase = "cleared";
     }
   }
@@ -314,6 +421,11 @@ export class RoomManager {
 
   private toPublicState(room: Room): RoomState {
     const revealing = room.phase === "reveal" || room.phase === "cleared";
+    const currentQuizQuestion = room.settings.mode === "quiz" ? room.quizPool[room.questionIndex] : undefined;
+    const poolLength = room.settings.mode === "quiz" ? room.quizPool.length : room.questionPool.length;
+    const currentQuestionText =
+      room.settings.mode === "quiz" ? currentQuizQuestion?.question ?? null : room.questionIndex >= 0 ? room.questionPool[room.questionIndex] : null;
+
     return {
       roomId: room.id,
       phase: room.phase,
@@ -322,17 +434,21 @@ export class RoomManager {
         nickname: p.nickname,
         hasAnswered: p.answer !== null,
         answer: revealing ? p.answer : null,
+        score: p.score,
+        isCorrect: revealing ? p.isCorrect : null,
       })),
       hostPlayerId: room.hostPlayerId,
       streak: room.streak,
       goal: GOAL,
       questionNumber: room.attemptsCount,
-      totalQuestions: room.questionPool.length,
-      currentQuestion: room.questionIndex >= 0 ? room.questionPool[room.questionIndex] : null,
+      totalQuestions: poolLength,
+      currentQuestion: currentQuestionText,
+      correctAnswerText: revealing && currentQuizQuestion ? currentQuizQuestion.answer : null,
       answerDeadline: room.answerDeadline,
       lastResult: room.lastResult,
       settings: room.settings,
       availableCategories: QUESTION_CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
+      availableQuizChapters: QUIZ_CHAPTERS.map((c) => ({ id: c.id, label: c.label })),
     };
   }
 }

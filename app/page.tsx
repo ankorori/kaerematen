@@ -68,6 +68,9 @@ export default function HomePage() {
     <main className="container">
       <h1>一致するまで終われまテン</h1>
       <p>お題に対してみんなで同じ答えを書けばクリア。10回連続一致を目指そう。</p>
+      <p className="hint">
+        ルーム作成後、ロビー画面でホストが「クイズモード」を選ぶと、みんなで遊べる全100問のクイズにも挑戦できます。
+      </p>
       <button onClick={handleCreate} disabled={creating}>
         {creating ? "作成中..." : "ルームを作る"}
       </button>

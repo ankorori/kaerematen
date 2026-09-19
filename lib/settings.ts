@@ -10,3 +10,6 @@ export const MAX_ANSWER_DURATION_SEC = 180;
 
 // ホストが選べる回答時間(秒)の候補。
 export const ANSWER_DURATION_CHOICES_SEC = [30, 45, 60, 90, 120, 150] as const;
+
+// デフォルトのゲームモード("streak" = 一致するまで終われまテン, "quiz" = クイズモード)。
+export const DEFAULT_MODE = "streak" as const;

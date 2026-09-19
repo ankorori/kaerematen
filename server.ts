@@ -31,6 +31,7 @@ app.prepare().then(() => {
     socket.on("start_game", () => manager.handleStart(socket));
     socket.on("submit_answer", (payload) => manager.handleSubmit(socket, payload));
     socket.on("force_match", () => manager.handleForceMatch(socket));
+    socket.on("toggle_correct", (payload) => manager.handleToggleCorrect(socket, payload));
     socket.on("advance", () => manager.handleAdvance(socket));
     socket.on("restart_game", () => manager.handleRestart(socket));
     socket.on("disconnect", () => manager.handleDisconnect(socket));
