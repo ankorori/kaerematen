@@ -572,3 +572,18 @@ button.chip.selected {
   padding: 0.4rem 0.9rem;
   font-size: 0.85rem;
 }
+
+.correct,
+.incorrect {
+  font-weight: 900;
+  display: inline-block;
+  min-width: 1.2em;
+}
+
+.correct {
+  color: var(--good);
+}
+
+.incorrect {
+  color: var(--bad);
+}

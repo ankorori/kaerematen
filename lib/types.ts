@@ -1,10 +1,14 @@
 export type Phase = "lobby" | "answering" | "reveal" | "cleared";
 
+export type GameMode = "streak" | "quiz";
+
 export interface PublicPlayer {
   id: string;
   nickname: string;
   hasAnswered: boolean;
   answer: string | null;
+  score: number;
+  isCorrect: boolean | null;
 }
 
 export interface QuestionCategoryInfo {
@@ -15,6 +19,8 @@ export interface QuestionCategoryInfo {
 export interface RoomSettings {
   answerDurationMs: number;
   categoryIds: string[];
+  mode: GameMode;
+  quizChapterIds: string[];
 }
 
 export interface RoomState {
@@ -27,10 +33,12 @@ export interface RoomState {
   questionNumber: number;
   totalQuestions: number;
   currentQuestion: string | null;
+  correctAnswerText: string | null;
   answerDeadline: number | null;
   lastResult: { matched: boolean; forced: boolean; milestone: boolean } | null;
   settings: RoomSettings;
   availableCategories: QuestionCategoryInfo[];
+  availableQuizChapters: QuestionCategoryInfo[];
 }
 
 export type JoinResult =
@@ -46,10 +54,16 @@ export interface ClientToServerEvents {
     ack: (res: JoinResult) => void,
   ) => void;
   watch: (payload: { roomId: string }, ack: (res: WatchResult) => void) => void;
-  update_settings: (payload: { answerDurationSec?: number; categoryIds?: string[] }) => void;
+  update_settings: (payload: {
+    answerDurationSec?: number;
+    categoryIds?: string[];
+    mode?: GameMode;
+    quizChapterIds?: string[];
+  }) => void;
   start_game: () => void;
   submit_answer: (payload: { text: string }) => void;
   force_match: () => void;
+  toggle_correct: (payload: { playerId: string }) => void;
   advance: () => void;
   restart_game: () => void;
 }

@@ -37,7 +37,17 @@ export default function DisplayPage() {
 
   useEffect(() => {
     if (!soundOn) return;
-    if (state?.phase !== "reveal" || !state.lastResult) return;
+    if (state?.phase !== "reveal") return;
+    if (state.settings.mode === "quiz") {
+      const anyCorrect = state.players.some((p) => p.isCorrect);
+      if (anyCorrect) {
+        playMatchSound(false);
+      } else {
+        playMismatchSound();
+      }
+      return;
+    }
+    if (!state.lastResult) return;
     if (state.lastResult.matched) {
       playMatchSound(state.lastResult.milestone);
     } else {
@@ -79,17 +89,24 @@ export default function DisplayPage() {
     ? Math.max(0, Math.ceil((state.answerDeadline - now) / 1000))
     : null;
   const joinUrl = typeof window !== "undefined" ? `${window.location.origin}/play/${state.roomId}` : "";
-  const selectedCategoryLabels = state.availableCategories
-    .filter((c) => state.settings.categoryIds.includes(c.id))
+  const isQuiz = state.settings.mode === "quiz";
+  const selectedCategoryLabels = (isQuiz ? state.availableQuizChapters : state.availableCategories)
+    .filter((c) => (isQuiz ? state.settings.quizChapterIds : state.settings.categoryIds).includes(c.id))
     .map((c) => c.label);
+  const ranking = [...state.players].sort((a, b) => b.score - a.score);
+  const anyCorrect = state.players.some((p) => p.isCorrect);
 
   return (
     <main className="container display">
       <header className="statusbar big">
         <span>ルーム: {state.roomId}</span>
-        <span>
-          連続一致: {state.streak} / {state.goal}
-        </span>
+        {isQuiz ? (
+          <span>問題 {state.questionNumber} / {state.totalQuestions}</span>
+        ) : (
+          <span>
+            連続一致: {state.streak} / {state.goal}
+          </span>
+        )}
         <button type="button" className="secondary sound-toggle" onClick={enableSound}>
           {soundOn ? "🔊 音声ON" : "🔈 音声を有効にする"}
         </button>
@@ -100,7 +117,8 @@ export default function DisplayPage() {
           <h1>参加者を待っています</h1>
           <p className="joinurl">参加用URL: {joinUrl}</p>
           <p className="hint center">
-            回答時間: {state.settings.answerDurationMs / 1000}秒 / カテゴリ: {selectedCategoryLabels.join("、")}
+            {isQuiz ? "クイズモード" : "一致モード"} / 回答時間: {state.settings.answerDurationMs / 1000}秒 /{" "}
+            {isQuiz ? "章" : "カテゴリ"}: {selectedCategoryLabels.join("、")}
           </p>
           <ul className="playergrid">
             {state.players.map((p) => (
@@ -125,7 +143,22 @@ export default function DisplayPage() {
         </section>
       )}
 
-      {state.phase === "reveal" && (
+      {state.phase === "reveal" && isQuiz && (
+        <section>
+          {anyCorrect ? <Confetti key={state.questionNumber} /> : <Dismay key={state.questionNumber} />}
+          <h1 className={anyCorrect ? "matched" : "mismatched"}>正解: {state.correctAnswerText}</h1>
+          <ul className="playergrid">
+            {state.players.map((p) => (
+              <li key={p.id} className={p.isCorrect ? "answered" : ""}>
+                {p.nickname}: <strong>{p.answer ?? "(未回答)"}</strong> ({p.isCorrect ? "○" : "×"} / スコア{p.score})
+              </li>
+            ))}
+          </ul>
+          <p className="hint center">ホストが次の問題に進めるのを待っています…</p>
+        </section>
+      )}
+
+      {state.phase === "reveal" && !isQuiz && (
         <section>
           {state.lastResult?.matched ? (
             <Confetti key={state.questionNumber} />
@@ -149,7 +182,21 @@ export default function DisplayPage() {
         </section>
       )}
 
-      {state.phase === "cleared" && (
+      {state.phase === "cleared" && isQuiz && (
+        <section>
+          <Confetti pieceCount={220} />
+          <h1 className="matched cleared-title">クイズ終了！ 🎉</h1>
+          <ol className="playergrid">
+            {ranking.map((p) => (
+              <li key={p.id}>
+                {p.nickname}: {p.score}問正解
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {state.phase === "cleared" && !isQuiz && (
         <section>
           <Confetti pieceCount={220} />
           <h1 className="matched cleared-title">クリア！ 🎉 10回連続一致達成！</h1>
