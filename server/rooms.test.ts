@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Server, Socket } from "socket.io";
 import { RoomManager } from "./rooms";
+import { NIGHT_CATEGORIES } from "../lib/nightQuestions";
 import { QUIZ_QUESTIONS } from "../lib/quizQuestions";
 import type { ClientToServerEvents, RoomState, ServerToClientEvents } from "../lib/types";
 
@@ -306,5 +307,63 @@ describe("RoomManager - quiz mode (クイズモード)", () => {
     expect(hostPlayer.hasAnswered).toBe(true);
     expect(hostPlayer.answer).toBeNull();
     expect(hostPlayer.isCorrect).toBeNull();
+  });
+});
+
+describe("RoomManager - night mode (深夜モード)", () => {
+  let manager: RoomManager;
+  let states: Map<string, RoomState>;
+  let roomId: string;
+  let host: AppSocket;
+  let guest: AppSocket;
+
+  beforeEach(() => {
+    const fake = createFakeIo();
+    manager = new RoomManager(fake.io);
+    states = fake.states;
+
+    const created = manager.createRoom();
+    roomId = created.roomId;
+
+    host = createFakeSocket("host-socket");
+    guest = createFakeSocket("guest-socket");
+    join(manager, host, roomId, "ホスト", created.hostToken);
+    join(manager, guest, roomId, "ゲスト");
+
+    manager.handleUpdateSettings(host, { mode: "night", nightCategoryIds: ["night-love"] });
+  });
+
+  function currentState(): RoomState {
+    const state = states.get(roomId);
+    if (!state) throw new Error("room state missing");
+    return state;
+  }
+
+  it("asks only questions from the selected night categories", () => {
+    const loveQuestions = NIGHT_CATEGORIES.find((c) => c.id === "night-love")!.questions;
+    manager.handleStart(host);
+    expect(currentState().totalQuestions).toBe(loveQuestions.length);
+    expect(loveQuestions).toContain(currentState().currentQuestion);
+  });
+
+  it("plays like streak mode: matching answers extend the streak and host can force a match", () => {
+    manager.handleStart(host);
+    manager.handleSubmit(host, { text: "海" });
+    manager.handleSubmit(guest, { text: "うみ" });
+    expect(currentState().streak).toBe(0);
+
+    manager.handleForceMatch(host);
+    expect(currentState().streak).toBe(1);
+
+    manager.handleAdvance(host);
+    manager.handleSubmit(host, { text: "海" });
+    manager.handleSubmit(guest, { text: "海" });
+    expect(currentState().lastResult?.matched).toBe(true);
+    expect(currentState().streak).toBe(2);
+  });
+
+  it("ignores unknown night category ids", () => {
+    manager.handleUpdateSettings(host, { nightCategoryIds: ["not-a-category"] });
+    expect(currentState().settings.nightCategoryIds).toEqual(["night-love"]);
   });
 });

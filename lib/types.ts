@@ -1,6 +1,6 @@
 export type Phase = "lobby" | "answering" | "reveal" | "cleared";
 
-export type GameMode = "streak" | "quiz";
+export type GameMode = "streak" | "quiz" | "night";
 
 export interface PublicPlayer {
   id: string;
@@ -21,6 +21,7 @@ export interface RoomSettings {
   categoryIds: string[];
   mode: GameMode;
   quizChapterIds: string[];
+  nightCategoryIds: string[];
 }
 
 export interface RoomState {
@@ -39,6 +40,7 @@ export interface RoomState {
   settings: RoomSettings;
   availableCategories: QuestionCategoryInfo[];
   availableQuizChapters: QuestionCategoryInfo[];
+  availableNightCategories: QuestionCategoryInfo[];
 }
 
 export type JoinResult =
@@ -59,6 +61,7 @@ export interface ClientToServerEvents {
     categoryIds?: string[];
     mode?: GameMode;
     quizChapterIds?: string[];
+    nightCategoryIds?: string[];
   }) => void;
   start_game: () => void;
   submit_answer: (payload: { text: string }) => void;

@@ -137,6 +137,13 @@ export default function PlayPage() {
     if (next.length === 0) return;
     getSocket().emit("update_settings", { quizChapterIds: next });
   }
+  function toggleNightCategory(id: string) {
+    if (!state) return;
+    const current = state.settings.nightCategoryIds;
+    const next = current.includes(id) ? current.filter((c) => c !== id) : [...current, id];
+    if (next.length === 0) return;
+    getSocket().emit("update_settings", { nightCategoryIds: next });
+  }
   function setMode(mode: GameMode) {
     getSocket().emit("update_settings", { mode });
   }
@@ -236,6 +243,13 @@ export default function PlayPage() {
                     >
                       クイズモード
                     </button>
+                    <button
+                      type="button"
+                      className={`chip${state.settings.mode === "night" ? " selected" : ""}`}
+                      onClick={() => setMode("night")}
+                    >
+                      🌙 深夜モード(大人向け)
+                    </button>
                   </div>
                 </div>
                 <div className="settings-group">
@@ -263,6 +277,22 @@ export default function PlayPage() {
                             type="checkbox"
                             checked={state.settings.quizChapterIds.includes(c.id)}
                             onChange={() => toggleQuizChapter(c.id)}
+                          />
+                          {c.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : state.settings.mode === "night" ? (
+                  <div className="settings-group">
+                    <span className="settings-label">深夜モードのカテゴリ(大人向けのお題です)</span>
+                    <div className="category-options">
+                      {state.availableNightCategories.map((c) => (
+                        <label key={c.id}>
+                          <input
+                            type="checkbox"
+                            checked={state.settings.nightCategoryIds.includes(c.id)}
+                            onChange={() => toggleNightCategory(c.id)}
                           />
                           {c.label}
                         </label>
