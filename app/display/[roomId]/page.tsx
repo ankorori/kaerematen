@@ -90,8 +90,14 @@ export default function DisplayPage() {
     : null;
   const joinUrl = typeof window !== "undefined" ? `${window.location.origin}/play/${state.roomId}` : "";
   const isQuiz = state.settings.mode === "quiz";
-  const selectedCategoryLabels = (isQuiz ? state.availableQuizChapters : state.availableCategories)
-    .filter((c) => (isQuiz ? state.settings.quizChapterIds : state.settings.categoryIds).includes(c.id))
+  const isNight = state.settings.mode === "night";
+  const [categoryOptions, selectedCategoryIds] = isQuiz
+    ? [state.availableQuizChapters, state.settings.quizChapterIds]
+    : isNight
+      ? [state.availableNightCategories, state.settings.nightCategoryIds]
+      : [state.availableCategories, state.settings.categoryIds];
+  const selectedCategoryLabels = categoryOptions
+    .filter((c) => selectedCategoryIds.includes(c.id))
     .map((c) => c.label);
   const ranking = [...state.players].sort((a, b) => b.score - a.score);
   const anyCorrect = state.players.some((p) => p.isCorrect);
@@ -117,7 +123,7 @@ export default function DisplayPage() {
           <h1>参加者を待っています</h1>
           <p className="joinurl">参加用URL: {joinUrl}</p>
           <p className="hint center">
-            {isQuiz ? "クイズモード" : "一致モード"} / 回答時間: {state.settings.answerDurationMs / 1000}秒 /{" "}
+            {isQuiz ? "クイズモード" : isNight ? "🌙 深夜モード" : "一致モード"} / 回答時間: {state.settings.answerDurationMs / 1000}秒 /{" "}
             {isQuiz ? "章" : "カテゴリ"}: {selectedCategoryLabels.join("、")}
           </p>
           <ul className="playergrid">

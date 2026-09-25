@@ -1,5 +1,11 @@
 import { customAlphabet, nanoid } from "nanoid";
 import type { Server, Socket } from "socket.io";
+import {
+  ALL_NIGHT_CATEGORY_IDS,
+  DEFAULT_NIGHT_CATEGORY_IDS,
+  NIGHT_CATEGORIES,
+  getNightQuestionsForCategories,
+} from "../lib/nightQuestions";
 import { normalizeAnswer } from "../lib/normalize";
 import { ALL_CATEGORY_IDS, QUESTION_CATEGORIES, getQuestionsForCategories } from "../lib/questions";
 import {
@@ -105,6 +111,7 @@ export class RoomManager {
         categoryIds: [...ALL_CATEGORY_IDS],
         mode: DEFAULT_MODE,
         quizChapterIds: [...ALL_QUIZ_CHAPTER_IDS],
+        nightCategoryIds: [...DEFAULT_NIGHT_CATEGORY_IDS],
       },
     };
     this.rooms.set(id, room);
@@ -167,6 +174,7 @@ export class RoomManager {
       categoryIds?: string[];
       mode?: GameMode;
       quizChapterIds?: string[];
+      nightCategoryIds?: string[];
     },
   ) {
     const room = this.roomOf(socket);
@@ -188,7 +196,7 @@ export class RoomManager {
       }
     }
 
-    if (payload.mode === "streak" || payload.mode === "quiz") {
+    if (payload.mode === "streak" || payload.mode === "quiz" || payload.mode === "night") {
       room.settings.mode = payload.mode;
     }
 
@@ -196,6 +204,13 @@ export class RoomManager {
       const valid = [...new Set(payload.quizChapterIds.filter((id) => ALL_QUIZ_CHAPTER_IDS.includes(id)))];
       if (valid.length > 0) {
         room.settings.quizChapterIds = valid;
+      }
+    }
+
+    if (Array.isArray(payload.nightCategoryIds)) {
+      const valid = [...new Set(payload.nightCategoryIds.filter((id) => ALL_NIGHT_CATEGORY_IDS.includes(id)))];
+      if (valid.length > 0) {
+        room.settings.nightCategoryIds = valid;
       }
     }
 
@@ -225,8 +240,12 @@ export class RoomManager {
       );
       room.questionPool = [];
     } else {
+      const questions =
+        room.settings.mode === "night"
+          ? getNightQuestionsForCategories(room.settings.nightCategoryIds)
+          : getQuestionsForCategories(room.settings.categoryIds);
       room.questionPool = unaskedFirst(
-        getQuestionsForCategories(room.settings.categoryIds),
+        questions,
         room.askedQuestions,
         (q) => q,
       );
@@ -255,7 +274,7 @@ export class RoomManager {
   handleForceMatch(socket: AppSocket) {
     const room = this.roomOf(socket);
     if (!room) return;
-    if (room.settings.mode !== "streak") return;
+    if (room.settings.mode === "quiz") return;
     if (socket.data.playerId !== room.hostPlayerId) return;
     if (room.phase !== "reveal") return;
     if (room.lastResult?.matched) return;
@@ -352,7 +371,7 @@ export class RoomManager {
     if (room.answerTimer) clearTimeout(room.answerTimer);
 
     room.questionIndex += 1;
-    if (room.settings.mode === "streak" && room.questionIndex >= room.questionPool.length) {
+    if (room.settings.mode !== "quiz" && room.questionIndex >= room.questionPool.length) {
       // 全問出し切ったら山札を作り直す。直前の問題が連続しないようにする。
       const last = room.questionPool[room.questionPool.length - 1];
       room.questionPool = shuffled(room.questionPool);
@@ -423,7 +442,7 @@ export class RoomManager {
   }
 
   private checkClear(room: Room) {
-    if (room.settings.mode === "streak" && room.streak >= GOAL) {
+    if (room.settings.mode !== "quiz" && room.streak >= GOAL) {
       room.phase = "cleared";
     }
   }
@@ -468,6 +487,7 @@ export class RoomManager {
       settings: room.settings,
       availableCategories: QUESTION_CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
       availableQuizChapters: QUIZ_CHAPTERS.map((c) => ({ id: c.id, label: c.label })),
+      availableNightCategories: NIGHT_CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
     };
   }
 }
