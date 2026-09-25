@@ -1,6 +1,11 @@
 import { customAlphabet, nanoid } from "nanoid";
 import type { Server, Socket } from "socket.io";
-import { ALL_NIGHT_CATEGORY_IDS, NIGHT_CATEGORIES, getNightQuestionsForCategories } from "../lib/nightQuestions";
+import {
+  ALL_NIGHT_CATEGORY_IDS,
+  DEFAULT_NIGHT_CATEGORY_IDS,
+  NIGHT_CATEGORIES,
+  getNightQuestionsForCategories,
+} from "../lib/nightQuestions";
 import { normalizeAnswer } from "../lib/normalize";
 import { ALL_CATEGORY_IDS, QUESTION_CATEGORIES, getQuestionsForCategories } from "../lib/questions";
 import {
@@ -106,7 +111,7 @@ export class RoomManager {
         categoryIds: [...ALL_CATEGORY_IDS],
         mode: DEFAULT_MODE,
         quizChapterIds: [...ALL_QUIZ_CHAPTER_IDS],
-        nightCategoryIds: [...ALL_NIGHT_CATEGORY_IDS],
+        nightCategoryIds: [...DEFAULT_NIGHT_CATEGORY_IDS],
       },
     };
     this.rooms.set(id, room);

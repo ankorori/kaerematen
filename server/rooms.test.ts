@@ -362,6 +362,21 @@ describe("RoomManager - night mode (深夜モード)", () => {
     expect(currentState().streak).toBe(2);
   });
 
+  it("leaves the R18 category unselected until the host opts in", () => {
+    const fake = createFakeIo();
+    const freshManager = new RoomManager(fake.io);
+    const created = freshManager.createRoom();
+    join(freshManager, createFakeSocket("h"), created.roomId, "ホスト", created.hostToken);
+    const ids = fake.states.get(created.roomId)!.settings.nightCategoryIds;
+    expect(ids).not.toContain("night-r18");
+    expect(ids.length).toBeGreaterThan(0);
+
+    manager.handleUpdateSettings(host, { nightCategoryIds: ["night-r18"] });
+    manager.handleStart(host);
+    const r18Questions = NIGHT_CATEGORIES.find((c) => c.id === "night-r18")!.questions;
+    expect(r18Questions).toContain(currentState().currentQuestion);
+  });
+
   it("ignores unknown night category ids", () => {
     manager.handleUpdateSettings(host, { nightCategoryIds: ["not-a-category"] });
     expect(currentState().settings.nightCategoryIds).toEqual(["night-love"]);
