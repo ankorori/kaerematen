@@ -112,6 +112,42 @@ describe("RoomManager - streak mode (一致するまで終われまテン)", () 
     expect(currentState().streak).toBe(0);
   });
 
+  function playMismatchedRounds(count: number): string[] {
+    const asked: string[] = [];
+    for (let i = 0; i < count; i++) {
+      if (currentState().phase === "reveal") manager.handleAdvance(host);
+      asked.push(currentState().currentQuestion!);
+      manager.handleSubmit(host, { text: "犬" });
+      manager.handleSubmit(guest, { text: "猫" });
+    }
+    return asked;
+  }
+
+  it("does not repeat a question until every question in the pool has been asked", () => {
+    manager.handleUpdateSettings(host, { categoryIds: ["http-status"] });
+    manager.handleStart(host);
+    const poolSize = currentState().totalQuestions;
+
+    const asked = playMismatchedRounds(poolSize);
+    expect(new Set(asked).size).toBe(poolSize);
+
+    // 一巡した後も直前と同じ問題は続かない
+    const next = playMismatchedRounds(1);
+    expect(next[0]).not.toBe(asked[asked.length - 1]);
+  });
+
+  it("prefers questions not yet asked in this room after a restart", () => {
+    manager.handleUpdateSettings(host, { categoryIds: ["http-status"] });
+    manager.handleStart(host);
+    const firstGame = playMismatchedRounds(3);
+
+    manager.handleRestart(host);
+    manager.handleStart(host);
+    const secondGame = playMismatchedRounds(3);
+
+    expect(secondGame.filter((q) => firstGame.includes(q))).toEqual([]);
+  });
+
   it("clears the room after reaching the goal streak", () => {
     manager.handleStart(host);
     for (let i = 0; i < 10; i++) {
@@ -235,6 +271,29 @@ describe("RoomManager - quiz mode (クイズモード)", () => {
     const state = currentState();
     expect(state.phase).toBe("cleared");
     expect(state.questionNumber).toBe(20);
+  });
+
+  it("never repeats a question within a game and prefers unasked ones after a restart", () => {
+    manager.handleStart(host);
+    const firstGame: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      if (i > 0) manager.handleAdvance(host);
+      firstGame.push(currentState().currentQuestion!);
+      manager.handleSubmit(host, { text: "x" });
+      manager.handleSubmit(guest, { text: "x" });
+    }
+    expect(new Set(firstGame).size).toBe(10);
+
+    manager.handleRestart(host);
+    manager.handleStart(host);
+    const secondGame: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      if (i > 0) manager.handleAdvance(host);
+      secondGame.push(currentState().currentQuestion!);
+      manager.handleSubmit(host, { text: "x" });
+      manager.handleSubmit(guest, { text: "x" });
+    }
+    expect(secondGame.filter((q) => firstGame.includes(q))).toEqual([]);
   });
 
   it("keeps per-question answers hidden from other players until reveal", () => {

@@ -49,6 +49,8 @@ interface Room {
   questionIndex: number;
   questionPool: string[];
   quizPool: QuizQuestion[];
+  // このルームで一度出題した問題文。再スタートしてもリセットせず、未出題の問題を優先して出す。
+  askedQuestions: Set<string>;
   attemptsCount: number;
   answerDeadline: number | null;
   lastResult: { matched: boolean; forced: boolean; milestone: boolean } | null;
@@ -65,6 +67,13 @@ function shuffled<T>(items: T[]): T[] {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
+}
+
+// 未出題の問題をシャッフルして先頭に並べ、出題済みの問題はその後ろに回す。
+function unaskedFirst<T>(items: T[], asked: Set<string>, textOf: (item: T) => string): T[] {
+  const unasked = items.filter((item) => !asked.has(textOf(item)));
+  const alreadyAsked = items.filter((item) => asked.has(textOf(item)));
+  return [...shuffled(unasked), ...shuffled(alreadyAsked)];
 }
 
 export class RoomManager {
@@ -86,6 +95,7 @@ export class RoomManager {
       questionIndex: -1,
       questionPool: [],
       quizPool: [],
+      askedQuestions: new Set(),
       attemptsCount: 0,
       answerDeadline: null,
       lastResult: null,
@@ -208,10 +218,18 @@ export class RoomManager {
     }
 
     if (room.settings.mode === "quiz") {
-      room.quizPool = shuffled(getQuizQuestionsForChapters(room.settings.quizChapterIds));
+      room.quizPool = unaskedFirst(
+        getQuizQuestionsForChapters(room.settings.quizChapterIds),
+        room.askedQuestions,
+        (q) => q.question,
+      );
       room.questionPool = [];
     } else {
-      room.questionPool = getQuestionsForCategories(room.settings.categoryIds);
+      room.questionPool = unaskedFirst(
+        getQuestionsForCategories(room.settings.categoryIds),
+        room.askedQuestions,
+        (q) => q,
+      );
       room.quizPool = [];
     }
 
@@ -333,11 +351,21 @@ export class RoomManager {
   private nextQuestion(room: Room) {
     if (room.answerTimer) clearTimeout(room.answerTimer);
 
-    const poolLength = room.settings.mode === "quiz" ? room.quizPool.length : room.questionPool.length;
-    room.questionIndex =
+    room.questionIndex += 1;
+    if (room.settings.mode === "streak" && room.questionIndex >= room.questionPool.length) {
+      // 全問出し切ったら山札を作り直す。直前の問題が連続しないようにする。
+      const last = room.questionPool[room.questionPool.length - 1];
+      room.questionPool = shuffled(room.questionPool);
+      if (room.questionPool.length > 1 && room.questionPool[0] === last) {
+        [room.questionPool[0], room.questionPool[1]] = [room.questionPool[1], room.questionPool[0]];
+      }
+      room.questionIndex = 0;
+    }
+    const questionText =
       room.settings.mode === "quiz"
-        ? room.questionIndex + 1
-        : this.pickNextQuestionIndex(room.questionIndex, poolLength);
+        ? room.quizPool[room.questionIndex]?.question
+        : room.questionPool[room.questionIndex];
+    if (questionText !== undefined) room.askedQuestions.add(questionText);
     room.attemptsCount += 1;
     for (const p of room.players.values()) {
       p.answer = null;
@@ -392,15 +420,6 @@ export class RoomManager {
       player.isCorrect = correct;
       if (correct) player.score += 1;
     }
-  }
-
-  private pickNextQuestionIndex(previousIndex: number, poolLength: number): number {
-    if (poolLength <= 1) return 0;
-    let index = previousIndex;
-    while (index === previousIndex) {
-      index = Math.floor(Math.random() * poolLength);
-    }
-    return index;
   }
 
   private checkClear(room: Room) {
