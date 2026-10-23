@@ -25,12 +25,22 @@ export default function PlayPage() {
   const [state, setState] = useState<RoomState | null>(null);
   const [answerText, setAnswerText] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submittedAnswer, setSubmittedAnswer] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [seenQuestionNumber, setSeenQuestionNumber] = useState<number | undefined>(undefined);
   const [now, setNow] = useState(0);
 
   if (state?.questionNumber !== seenQuestionNumber) {
     setSeenQuestionNumber(state?.questionNumber);
     setSubmitted(false);
+    setSubmittedAnswer(null);
+    setIsEditing(false);
+    setAnswerText("");
+  }
+
+  const me = state?.players.find((p) => p.id === playerId);
+  if (state?.phase === "answering" && me?.hasAnswered && !submitted) {
+    setSubmitted(true);
   }
 
   useEffect(() => {
@@ -97,11 +107,27 @@ export default function PlayPage() {
 
   function handleSubmitAnswer(e: FormEvent) {
     e.preventDefault();
-    if (!answerText.trim() || submitted) return;
+    const text = answerText.trim();
+    if (!text) return;
     unlockAudio();
-    getSocket().emit("submit_answer", { text: answerText.trim() });
-    setAnswerText("");
+    getSocket().emit("submit_answer", { text });
+    setSubmittedAnswer(text);
     setSubmitted(true);
+    setIsEditing(false);
+  }
+
+  function startEditing() {
+    if (submittedAnswer) {
+      setAnswerText(submittedAnswer);
+    }
+    setIsEditing(true);
+  }
+
+  function cancelEditing() {
+    if (submittedAnswer) {
+      setAnswerText(submittedAnswer);
+    }
+    setIsEditing(false);
   }
 
   function startGame() {
@@ -148,10 +174,12 @@ export default function PlayPage() {
     getSocket().emit("update_settings", { mode });
   }
   function submitQuickAnswer(text: string) {
-    if (submitted) return;
     unlockAudio();
     getSocket().emit("submit_answer", { text });
+    setSubmittedAnswer(text);
+    setAnswerText(text);
     setSubmitted(true);
+    setIsEditing(false);
   }
   function toggleCorrect(targetPlayerId: string) {
     unlockAudio();
@@ -330,14 +358,27 @@ export default function PlayPage() {
           <h2>{isQuiz ? `第${state.questionNumber}問` : `お題 ${state.questionNumber}問目`}</h2>
           <p className="question">{state.currentQuestion}</p>
           {secondsLeft !== null && <p className="timer">残り {secondsLeft} 秒</p>}
-          {!submitted ? (
+          {!submitted || isEditing ? (
             <>
+              {submitted && (
+                <p className="hint">
+                  他の人を待っています…({answeredCount}/{state.players.length})
+                </p>
+              )}
               {isMaruBatsu && (
                 <div className="duration-options">
-                  <button type="button" className="chip" onClick={() => submitQuickAnswer("○")}>
+                  <button
+                    type="button"
+                    className={`chip${(answerText === "○" || (!answerText && submittedAnswer === "○")) ? " selected" : ""}`}
+                    onClick={() => submitQuickAnswer("○")}
+                  >
                     ○
                   </button>
-                  <button type="button" className="chip" onClick={() => submitQuickAnswer("×")}>
+                  <button
+                    type="button"
+                    className={`chip${(answerText === "×" || (!answerText && submittedAnswer === "×")) ? " selected" : ""}`}
+                    onClick={() => submitQuickAnswer("×")}
+                  >
                     ×
                   </button>
                 </div>
@@ -350,13 +391,35 @@ export default function PlayPage() {
                   maxLength={100}
                   autoFocus
                 />
-                <button type="submit">回答する</button>
+                <div className="formActions">
+                  <button type="submit" style={{ flex: 1 }}>
+                    {submitted ? "回答を変更する" : "回答する"}
+                  </button>
+                  {submitted && (
+                    <button type="button" className="secondary" onClick={cancelEditing}>
+                      キャンセル
+                    </button>
+                  )}
+                </div>
               </form>
             </>
           ) : (
-            <p className="hint">
-              回答済み。他の人を待っています…({answeredCount}/{state.players.length})
-            </p>
+            <div className="card submitted-box">
+              <p>
+                ✓ 回答送信済み
+                {submittedAnswer ? (
+                  <>
+                    : <strong>{submittedAnswer}</strong>
+                  </>
+                ) : null}
+              </p>
+              <p className="hint">
+                他の人を待っています…({answeredCount}/{state.players.length})
+              </p>
+              <button type="button" className="secondary" onClick={startEditing}>
+                回答を修正する
+              </button>
+            </div>
           )}
         </section>
       )}
@@ -364,6 +427,7 @@ export default function PlayPage() {
       {state.phase === "reveal" && isQuiz && (
         <section>
           <h2>正解: {state.correctAnswerText}</h2>
+          {state.currentQuestion && <p className="question">{state.currentQuestion}</p>}
           <ul>
             {state.players.map((p) => (
               <li key={p.id}>
@@ -400,6 +464,7 @@ export default function PlayPage() {
           <h2 className={state.lastResult?.matched ? undefined : "mismatch-heading"}>
             {state.lastResult?.matched ? "一致！" : "不一致…"}
           </h2>
+          {state.currentQuestion && <p className="question">{state.currentQuestion}</p>}
           <ul>
             {state.players.map((p) => (
               <li key={p.id}>
