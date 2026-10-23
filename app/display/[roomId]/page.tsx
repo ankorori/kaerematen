@@ -153,6 +153,7 @@ export default function DisplayPage() {
         <section>
           {anyCorrect ? <Confetti key={state.questionNumber} /> : <Dismay key={state.questionNumber} />}
           <h1 className={anyCorrect ? "matched" : "mismatched"}>正解: {state.correctAnswerText}</h1>
+          {state.currentQuestion && <p className="question">{state.currentQuestion}</p>}
           <ul className="playergrid">
             {state.players.map((p) => (
               <li key={p.id} className={p.isCorrect ? "answered" : ""}>
@@ -177,6 +178,7 @@ export default function DisplayPage() {
           <h1 className={state.lastResult?.matched ? "matched" : "mismatched"}>
             {state.lastResult?.matched ? "一致！" : "不一致…"}
           </h1>
+          {state.currentQuestion && <p className="question">{state.currentQuestion}</p>}
           <ul className="playergrid">
             {state.players.map((p) => (
               <li key={p.id}>

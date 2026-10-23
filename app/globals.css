@@ -172,6 +172,17 @@ form {
   gap: 0.75rem;
 }
 
+.formActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.submitted-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
 .card {
   background: var(--surface);
   border: 3px solid var(--border);
@@ -241,6 +252,11 @@ form {
   border: 3px solid var(--border);
   border-radius: 1.5rem;
   box-shadow: 0 10px 24px -12px rgb(from var(--accent) r g b / 0.35);
+}
+
+.container.display .question {
+  text-align: center;
+  font-size: 1.8rem;
 }
 
 @keyframes pop-in {

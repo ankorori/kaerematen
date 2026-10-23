@@ -91,6 +91,26 @@ describe("RoomManager - streak mode (一致するまで終われまテン)", () 
     expect(state.streak).toBe(0);
   });
 
+  it("allows a player to modify their answer before all players have answered", () => {
+    manager.handleStart(host);
+    manager.handleSubmit(host, { text: "犬" });
+    // guest hasn't answered yet, so phase is still answering
+    expect(currentState().phase).toBe("answering");
+
+    // host updates answer to "猫"
+    manager.handleSubmit(host, { text: "猫" });
+    expect(currentState().phase).toBe("answering");
+
+    // guest answers "猫"
+    manager.handleSubmit(guest, { text: "猫" });
+
+    // Now all answered, and both answers match "猫"
+    const state = currentState();
+    expect(state.phase).toBe("reveal");
+    expect(state.lastResult?.matched).toBe(true);
+    expect(state.players.find((p) => p.id === "host-socket")?.answer).toBe("猫");
+  });
+
   it("lets the host force a match after a mismatch", () => {
     manager.handleStart(host);
     manager.handleSubmit(host, { text: "犬" });
